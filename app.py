@@ -16,7 +16,7 @@ st.markdown("This dashboard forecasts murder rates for each Indian state using A
 FILE_PATH = "AI PROJECT.xlsx"
 uploaded_file = None
 
-if os.pathexists(FILE_PATH):
+if os.path.exists(FILE_PATH):
     uploaded_file = FILE_PATH
     
 else:
