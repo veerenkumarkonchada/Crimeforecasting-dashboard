@@ -18,7 +18,7 @@ uploaded_file = None
 
 if os.pathexists(FILE_PATH):
     uploaded_file = FILE_PATH
-    st.success({"Found existing file:'{FILE_PATH}'")
+    
 else:
     # Upload Excel file
     uploaded_file = st.file_uploader("Upload your Excel file",type=["xlsx"])
