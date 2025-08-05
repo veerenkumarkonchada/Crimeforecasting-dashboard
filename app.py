@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
 import warnings
-
+import os
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
@@ -13,7 +13,16 @@ st.title("📈 Real-Time Crime Forecasting Dashboard")
 st.markdown("This dashboard forecasts murder rates for each Indian state using ARIMA time-series modeling.")
 
 # Upload Excel file
-uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"])
+FILE_PATH = "AI PROJECT.xlsx"
+uploaded_file = None
+
+if os.pathexists(FILE_PATH):
+    uploaded_file = FILE_PATH
+    st.success({"Found existing file:'{FILE_PATH}'")
+else:
+    # Upload Excel file
+    uploaded_file = st.file_uploader("Upload your Excel file",type=["xlsx"])
+    
 if uploaded_file:
     # Load data
     df = pd.read_excel(uploaded_file, header=1)
