@@ -106,4 +106,4 @@ else:
         st.dataframe(forecast_df)
 
     except Exception as e:
-        st.error(f"Forecasting failed for {selected_state} - {_}
+        st.error(f"Forecasting failed for {selected_state} 
