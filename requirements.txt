@@ -4,3 +4,5 @@ statsmodels
 scikit-learn
 openpyxl
 streamlit
+prophet
+tensorflow
