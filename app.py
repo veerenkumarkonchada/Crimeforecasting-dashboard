@@ -121,7 +121,7 @@ st.title("📊 Hybrid Crime Forecasting Dashboard")
 # Load your dataset
 @st.cache_data
 def load_data():
-    df = pd.read_csv("crime_data.csv")  # <-- replace with your dataset path
+    df = pd.read_csv("AI PROJECT(2).xlsv")  # <-- replace with your dataset path
     df["year"] = pd.to_datetime(df["year"], format="%Y")
     return df
 
