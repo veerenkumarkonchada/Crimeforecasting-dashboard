@@ -1,165 +1,69 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
-from prophet import Prophet
-from sklearn.ensemble import IsolationForest
-import shap
-from datetime import datetime
 import warnings
+import os
+
+# Suppress warnings
 warnings.filterwarnings("ignore")
 
-# ====================== SETUP ======================
-st.set_page_config(
-    page_title="Hybrid Crime Forecasting Dashboard",
-    layout="wide",
-    page_icon="🛡️"
-)
+# Page configuration
+st.set_page_config(page_title="Crime Forecasting Dashboard", layout="wide")
+st.title("📊 Real-Time Crime Forecasting Dashboard")
+st.markdown("Select a state and crime type to forecast for the next 6 years using ARIMA.")
 
-# ====================== CORE FUNCTIONS ======================
-@st.cache_data
-def load_data():
-    """Load and preprocess crime data"""
-    # In production: Connect to federated data sources
-    df = pd.read_excel("crime_data.xlsx")  # Replace with your actual data
-    df = df.drop(columns=['id', 'registration_circles'], errors='ignore')  # Anonymization
-    return df
+# ===== Load data from file included in the repo =====
+FILE_PATH = "AI PROJECT(2).xlsx"
+df = pd.read_excel(FILE_PATH, header=0)  # first row as header
 
-@st.cache_resource
-def train_arima(data):
-    """Train ARIMA model"""
-    model = ARIMA(data['y'], order=(1,1,1)).fit()
-    return model
+# ===== User Inputs =====
+states = sorted(df['state_name'].unique())
+selected_state = st.selectbox("Select a State", states)
 
-@st.cache_resource
-def train_prophet(data):
-    """Train Prophet model"""
-    model = Prophet()
-    model.fit(data)
-    return model
+# Detect crime columns (exclude id, year, state info, district info, etc.)
+exclude_cols = ['id', 'year', 'state_name', 'state_code', 'district_name', 'district_code', 'registration_circles']
+crime_columns = [col for col in df.columns if col not in exclude_cols]
+selected_crime = st.selectbox("Select Crime Type", crime_columns)
 
-def detect_anomalies(data):
-    """Identify statistical anomalies"""
-    clf = IsolationForest(contamination=0.1)
-    anomalies = clf.fit_predict(data['y'].values.reshape(-1, 1))
-    return data[anomalies == -1]
+# ===== Prepare Data =====
+crime_df = df.groupby(['year', 'state_name'])[selected_crime].sum().reset_index()
+state_data = crime_df[crime_df['state_name'] == selected_state].sort_values('year')
+years = state_data['year']
+values = state_data[selected_crime]
 
-def explain_model(model, model_type, data):
-    """Generate SHAP explanations"""
-    explainer = shap.Explainer(model.predict, data)
-    shap_values = explainer(data['y'])
-    return shap_values
+# ===== Forecast =====
+if len(values) < 5:
+    st.warning(f"{selected_state} does not have enough data for forecasting {selected_crime}.")
+else:
+    try:
+        model = ARIMA(values, order=(1, 1, 1))
+        model_fit = model.fit()
 
-# ====================== DASHBOARD LAYOUT ======================
-def main():
-    # Role-based access control
-    st.sidebar.header("Access Control")
-    role = st.sidebar.selectbox("Select Role", ["Public", "Law Enforcement", "Policy Maker"])
-    
-    # Data selection
-    df = load_data()
-    states = sorted(df['state_name'].unique())
-    selected_state = st.sidebar.selectbox("State", states)
-    crime_types = [c for c in df.columns if c not in ['year', 'state_name', 'state_code']]
-    selected_crime = st.sidebar.selectbox("Crime Type", crime_types)
-    
-    # Model selection
-    model_type = st.sidebar.radio("Model", ["ARIMA", "Prophet"])
-    
-    # Filter data
-    state_data = df[df['state_name'] == selected_state]
-    ts_data = state_data.groupby('year')[selected_crime].sum().reset_index()
-    ts_data = ts_data.rename(columns={'year': 'ds', selected_crime: 'y'})
-    ts_data['ds'] = pd.to_datetime(ts_data['ds'], format='%Y')
+        forecast_years = 6
+        forecast = model_fit.forecast(steps=forecast_years)
 
-    # ================ ANALYSIS SECTION ================
-    if st.sidebar.button("Run Full Analysis"):
-        with st.spinner("Crunching crime data..."):
-            # Train model
-            if model_type == "ARIMA":
-                model = train_arima(ts_data)
-                forecast_steps = st.sidebar.slider("Forecast Years", 1, 5, 3)
-                forecast = model.forecast(steps=forecast_steps)
-                future_dates = pd.date_range(
-                    start=ts_data['ds'].max(),
-                    periods=forecast_steps+1,
-                    freq='Y'
-                )[1:]
-            else:  # Prophet
-                model = train_prophet(ts_data)
-                future = model.make_future_dataframe(periods=3, freq='Y')
-                forecast = model.predict(future)['yhat'][-3:]
-                future_dates = future['ds'][-3:]
+        future_years = list(range(years.max() + 1, years.max() + forecast_years + 1))
+        all_years = list(years) + future_years
+        all_values = list(values) + list(forecast)
 
-            # ================ VISUALIZATION ================
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader(f"{selected_crime.replace('_', ' ').title()} in {selected_state}")
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=ts_data['ds'], y=ts_data['y'],
-                    name='Historical Data',
-                    mode='lines+markers'
-                ))
-                fig.add_trace(go.Scatter(
-                    x=future_dates, y=forecast,
-                    name='Forecast',
-                    mode='lines+markers',
-                    line=dict(color='red', dash='dash')
-                ))
-                fig.update_layout(
-                    xaxis_title="Year",
-                    yaxis_title="Cases Reported",
-                    hovermode="x unified"
-                )
-                st.plotly_chart(fig, use_container_width=True)
+        # ===== Plot =====
+        fig, ax = plt.subplots(figsize=(14, 6))
+        ax.plot(all_years, all_values, marker='o', linestyle='--', color='red', label='Forecasted')
+        ax.plot(years, values, marker='o', linestyle='-', color='blue', label='Actual')
+        ax.scatter(years, values, color='blue')
+        ax.scatter(future_years, forecast, color='red')
 
-            # ================ ANOMALY DETECTION ================
-            with col2:
-                st.subheader("Anomaly Detection")
-                anomalies = detect_anomalies(ts_data)
-                if not anomalies.empty:
-                    fig_anom = px.scatter(
-                        ts_data, x='ds', y='y',
-                        title="Suspected Anomalies",
-                        color=ts_data.index.isin(anomalies.index),
-                        color_discrete_map={True: 'red', False: 'blue'}
-                    )
-                    st.plotly_chart(fig_anom, use_container_width=True)
-                else:
-                    st.info("No significant anomalies detected")
+        for i, val in enumerate(all_values):
+            ax.text(all_years[i], val + 2, f'{int(val)}', ha='center', fontsize=7)
 
-            # ================ EXPLAINABILITY ================
-            st.subheader("Model Explainability")
-            if model_type == "ARIMA":
-                shap_values = explain_model(model, model_type, ts_data)
-                fig_shap = go.Figure()
-                fig_shap.add_trace(go.Bar(
-                    x=shap_values.values.flatten(),
-                    y=ts_data['ds'].dt.year.astype(str),
-                    orientation='h'
-                ))
-                st.plotly_chart(fig_shap, use_container_width=True)
-            
-            # ================ POLICY RECOMMENDATIONS ================
-            if role != "Public":
-                st.subheader("Policy Recommendations")
-                last_value = ts_data['y'].iloc[-1]
-                forecast_change = ((forecast[0] - last_value)/last_value)*100
-                
-                if forecast_change > 20:
-                    st.warning("🚨 Significant Increase Predicted")
-                    st.write(f"Recommended actions for {selected_state}:")
-                    st.markdown("""
-                    - Increase patrols in high-risk areas
-                    - Launch public awareness campaign
-                    - Allocate additional resources to crime prevention
-                    """)
-                else:
-                    st.success("Stable trends predicted")
+        ax.set_title(f"{selected_crime} Forecast for {selected_state}")
+        ax.set_xlabel("Year")
+        ax.set_ylabel(f"Number of {selected_crime.replace('_',' ').title()}")
+        ax.legend()
+        ax.grid(True)
 
-if __name__ == "__main__":
-    main()
+        st.pyplot(fig)
+
+    except Exception as e:
+        st.error(f"Forecasting failed for {selected_state} - {selected_crime}: {e}")
